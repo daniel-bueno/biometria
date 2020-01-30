@@ -247,11 +247,9 @@ function onVerificacao() {
     for (let i in dataset[0]) {
         euclidian = 0.0;
 
-        for (let j in dataset[0][i]) {
-            euclidian += Math.pow((dataset[0][i][j] - dataset[1][0][j]), 2);
-            console.log('---------------');
-            console.log('+= (', dataset[0][i][j], '-', dataset[1][0][j],') ^ 2 == ', Math.pow((dataset[0][i][j] - dataset[1][0][j]), 2));
-            console.log('valor euclidiano sem raiz::> ', euclidian);
+        let n = dataset[1][0].img.length;
+        for (let j in dataset[0][i].img) {
+            euclidian += Math.pow((dataset[0][i].img[j] - dataset[1][0].img[j]), 2) / n;
         }
 
         array_distancia.push(Math.sqrt(euclidian));
@@ -313,23 +311,9 @@ function imagemTratada() {
         return {newImageData: newImageDataObj, duration: duration};
     }
 
-    function displayFilteredImage(ctx, newPixelData, objLbph) {
+    function displayFilteredImage(ctx, newPixelData) {
         const tstart = new Date().getTime();
-
-        console.log('lbph::>', objLbph);
-
-        const imageData = ctx.createImageData(498, 498);
-        for (let i = 0; i < imageData.data.length; i += 4) {
-            // Modify pixel data
-            imageData.data[i] = objLbph.data[i];  // R value
-            imageData.data[i + 1] = objLbph.data[i + 1];    // G value
-            imageData.data[i + 2] = objLbph.data[i + 2];  // B value
-            imageData.data[i + 3] = objLbph.data[i + 3];  // A value
-        }
-
-        console.log('imageData::>', imageData);
-
-        ctx.putImageData(imageData, 0, 0);
+        ctx.putImageData(newPixelData, 0, 0);
         console.log("Render filtered image: %d msec", (new Date().getTime() - tstart));
     }
 
@@ -348,6 +332,7 @@ function imagemTratada() {
         var arr_aux = [];
         var image_share = [];
 
+        // divide o array em 500x500
         for (var i = 0; i < image.length; i += 4) {
             pos++;
             arr_aux.push(image[i]);
@@ -376,8 +361,6 @@ function imagemTratada() {
         var min = Math.min(...array_values);
         var max = Math.max(...array_values);
 
-        console.log(min, max);
-
         for (let i in array_values) {
             array_values[i] = (array_values[i] - min) / (max - min);
         }
@@ -385,14 +368,52 @@ function imagemTratada() {
         return array_values;
     }
 
-    function histograma(image) {
+    function histograma(im, gridX = 8, gridY = 8) {
         /* Cria o histograma da imagem */
-        var histogram = new Array(256);
-        histogram.fill(0);
+        var histogram = [];
 
-        var p = image.data;
-        for (var i = 0; i < p.length; i += 4) {
-            histogram[p[i]]++;
+        // Tamanho (largura e altura) da imagem
+        var rows = im.length;
+        var cols = im[0].length;
+
+        // Obter o tamanho (largura e altura) de cada região da matriz 8x8
+        var gridW = parseInt(cols / gridX);
+        var gridH = parseInt(rows / gridY);
+
+        // Calcula o histograma de cada grade
+        for (var gx = 0; gx < gridX; gx++) {
+            for (var gy = 0; gy < gridY; gy++) {
+                var regionHistogram = (new Array(256)).fill(0);
+
+                // Define as posições inicial e final do seguinte loop
+                var startPosX = parseInt(gx * gridW);
+                var startPosY = parseInt(gy * gridH);
+                var endPosX = parseInt((gx + 1) * gridH);
+                var endPosY = parseInt((gy + 1) * gridH);
+
+                // Verifique se nenhum pixel foi deixado no final
+                if (gx === gridX - 1)
+                    endPosX = cols;
+
+                if (gy === gridY - 1)
+                    endPosY = rows;
+
+                // Cria o histograma para aquela região (8x8)
+                for (let x = startPosX; x < endPosX; x++) {
+                    for (let y = startPosY; y < endPosY; y++) {
+                        // Verifica se as posições são validas
+                        if (x < im.length) {
+                            if (y < im[x].length) {
+                                if (im[x][y] < regionHistogram.length) {
+                                    regionHistogram[im[x][y]]++;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                histogram = histogram.concat(regionHistogram);
+            }
         }
 
         return histogram;
@@ -464,6 +485,7 @@ function imagemTratada() {
         return {
             // data: new Uint8ClampedArray(imGrayToCanvas),
             data: imGrayToCanvas,
+            matriz: new_matriz,
             width: imagem.length - 2,
             heigth: imagem[0].length - 2
         };
@@ -484,33 +506,39 @@ function imagemTratada() {
         return parseInt(binary, 2);
     }
 
-
     const image = document.getElementById('image');
-    console.log("Original Image: %s, %d x %d", image.src, image.width, image.height);
 
     // Extract data from the image object
     // imageDataObj: {data (Uint8ClampedArray), width, height}
     // const imageDataObj = Filters.getPixels(image);
     const imageDataObj = getImageData(image);
 
-    console.log("Pixels: type '%s', %d bytes, %d x %d, data: %s...", typeof(imageDataObj.data),
-        imageDataObj.data.length, imageDataObj.width, imageDataObj.height,
-        imageDataObj.data.slice(0, 10).toString());
-
     const outputCanvas = document.getElementById('output'),
         ctx = outputCanvas.getContext('2d');
 
-    // No worker: call code inline
-    // const imHist = histograma(imageDataObj);
+    // Método apenas de binarização (usado antes)
+    // const bn = imbinarize(imageDataObj)
+    // return imageProcess(bn.newImageData);
 
     const imMatriz = imToMatriz(imageDataObj);
 
     const imLbph = lbph(imMatriz);
 
-    const results = imbinarize(imageDataObj);
-    displayFilteredImage(ctx, results.newImageData, imLbph);
+    const imageData = ctx.createImageData(498, 498);
+    for (let i = 0; i < imLbph.data.length; i += 4) {
+        // Modify pixel data
+        imageData.data[i] = imLbph.data[i];  // R value
+        imageData.data[i + 1] = imLbph.data[i + 1];  // G value
+        imageData.data[i + 2] = imLbph.data[i + 2];  // B value
+        imageData.data[i + 3] = imLbph.data[i + 3];  // A value
+    }
+    displayFilteredImage(ctx, imageData /*results.newImageData*/);
 
-    return imageProcess(results.newImageData);
+    const imHist = histograma(imLbph.matriz);
+    console.log('lbph::>', imLbph);
+    console.log('imHistLbph::>', imHist);
+
+    return imHist;
 }
 
 function sampleAcquired(s){
